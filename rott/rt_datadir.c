@@ -22,7 +22,7 @@
 #include "m_misc.h"
 #include "rt_util.h"
 
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(__PS3__)
 #include <pwd.h>
 #endif
 
@@ -270,6 +270,7 @@ static void AddXdgDirs(void)
 }
 #endif
 
+#ifndef __PS3__
 static void AddStorefrontDirs(void)
 {
 	struct stat st;
@@ -334,12 +335,20 @@ static void AddStorefrontDirs(void)
 	}
 }
 
+#endif // !__PS3__
+
 static void BuildDataDirList(void)
 {
 	if (datadirs[0])
 	{
 		return;
 	}
+
+#ifdef __PS3__
+	// the game data goes by FTP to USRDIR, nowhere else
+	AddDataDir(GetExeDir());
+	return;
+#endif
 
 	// current directory
 	AddDataDir(".");
@@ -356,7 +365,9 @@ static void BuildDataDirList(void)
 	AddXdgDirs();
 #endif
 
+#ifndef __PS3__
 	AddStorefrontDirs();
+#endif
 }
 
 char *FindFileByName(const char *name)

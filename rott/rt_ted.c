@@ -57,6 +57,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "rt_debug.h"
 #include "rt_scale.h"
 #include "rt_net.h"
+#ifdef __PS3__
+#include "rt_ps3.h"
+#endif
 
 //========================================
 // GLOBAL VARIABLES
@@ -1035,6 +1038,18 @@ void PreCache(void)
 	byte *tempbuf;
 
 	double Gs = (iGLOBAL_SCREENWIDTH * 100.0 / 320.0) / 100.0;
+#ifdef __PS3__
+	// WIDESCREEN: the loading screen is the 4:3 one in the middle
+	int LEDX = 0;
+
+	if (iGLOBAL_SCREENWIDTH == PS3_WIDE_W)
+	{
+		Gs = 2.0;
+		LEDX = PS3_WIDE_OFS;
+	}
+#else
+#define LEDX 0
+#endif
 
 	// SetTextMode (  );
 
@@ -1089,19 +1104,19 @@ void PreCache(void)
 						PRECACHEBARY + PRECACHELED1Y,
 						W_GetNumForName("led1")); // led1 progressbar
 				}
-				else if (iGLOBAL_SCREENWIDTH == 640)
+				else if (iGLOBAL_SCREENWIDTH >= 640) // PS3: and 848
 				{
 					DrawNormalSprite(
-						72 + (Gs * (lastmem << 2)), 446,
+						LEDX + 72 + (Gs * (lastmem << 2)), 446,
 						W_GetNumForName("led1")); // led1 progressbar
 					DrawNormalSprite(
-						72 + (Gs * (lastmem << 2)), 446 + 3,
+						LEDX + 72 + (Gs * (lastmem << 2)), 446 + 3,
 						W_GetNumForName("led1")); // led1 progressbar
 					DrawNormalSprite(
-						72 + 3 + (Gs * (lastmem << 2)), 446,
+						LEDX + 72 + 3 + (Gs * (lastmem << 2)), 446,
 						W_GetNumForName("led1")); // led1 progressbar
 					DrawNormalSprite(
-						72 + 3 + (Gs * (lastmem << 2)), 446 + 3,
+						LEDX + 72 + 3 + (Gs * (lastmem << 2)), 446 + 3,
 						W_GetNumForName("led1")); // led1 progressbar
 				}
 
@@ -1119,19 +1134,19 @@ void PreCache(void)
 						PRECACHEBARY + PRECACHELED2Y,
 						W_GetNumForName("led2")); // led2 progressbar
 				}
-				else if (iGLOBAL_SCREENWIDTH == 640)
+				else if (iGLOBAL_SCREENWIDTH >= 640) // PS3: and 848
 				{
 					DrawNormalSprite(
-						72 + (Gs * (lastcache << 2)), 458,
+						LEDX + 72 + (Gs * (lastcache << 2)), 458,
 						W_GetNumForName("led2")); // led2 progressbar
 					DrawNormalSprite(
-						72 + (Gs * (lastcache << 2)), 458 + 3,
+						LEDX + 72 + (Gs * (lastcache << 2)), 458 + 3,
 						W_GetNumForName("led2")); // led2 progressbar
 					DrawNormalSprite(
-						72 + 3 + (Gs * (lastcache << 2)), 458,
+						LEDX + 72 + 3 + (Gs * (lastcache << 2)), 458,
 						W_GetNumForName("led2")); // led2 progressbar
 					DrawNormalSprite(
-						72 + 3 + (Gs * (lastcache << 2)), 458 + 3,
+						LEDX + 72 + 3 + (Gs * (lastcache << 2)), 458 + 3,
 						W_GetNumForName("led2")); // led2 progressbar
 				}
 				DisableScreenStretch(); // bna++

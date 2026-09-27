@@ -56,6 +56,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "rt_msg.h"
 #include "rt_scale.h"
 #include "develop.h"
+#ifdef __PS3__
+#include "rt_ps3.h"
+#endif
 
 #if (SHAREWARE == 1)
 #define NUMAMMOGRAPHICS 10
@@ -384,6 +387,25 @@ void DrawPlayScreen(boolean bufferofsonly)
 
 	if (SHOW_TOP_STATUS_BAR())
 	{
+#ifdef __PS3__
+		if (iGLOBAL_SCREENWIDTH == PS3_WIDE_W)
+		{
+			// WIDESCREEN: the 640 bar, and one more filler to the edge
+			shape = (pic_t *)W_CacheLumpName("bottbar", PU_CACHE, Cvt_pic_t, 1);
+			GameMemToScreen(shape, 320, 0, bufferofsonly);
+			GameMemToScreen(shape, PS3_WIDE_W - 320, 0, bufferofsonly);
+			DrawPPic(323, 1, 8 >> 2, 16, (byte *)&erase->data, 2, true,
+					 bufferofsonly);
+			DrawPPic(PS3_WIDE_W - 320 + 3, 1, 8 >> 2, 16,
+					 (byte *)&erase->data, 2, true, bufferofsonly);
+			DrawPPic(PS3_WIDE_W - 20, 1, 8 >> 2, 16, (byte *)&erase->data,
+					 2, true, bufferofsonly);
+			shape =
+				(pic_t *)W_CacheLumpName("stat_bar", PU_CACHE, Cvt_pic_t, 1);
+			GameMemToScreen(shape, 0, 0, bufferofsonly);
+		}
+		else
+#endif
 		if (iGLOBAL_SCREENWIDTH == 640)
 		{
 			// use this as dummy pic to fill out missing bar
@@ -438,6 +460,23 @@ void DrawPlayScreen(boolean bufferofsonly)
 		// else
 		{
 
+#ifdef __PS3__
+			if (iGLOBAL_SCREENWIDTH == PS3_WIDE_W)
+			{
+				// WIDESCREEN: three copies, health on the left, ammo on
+				// the right, bar in between; the icons in the middle erased
+				int y = (224 * 2) + 16 - ShowKillsYoffset;
+
+				GameMemToScreen(shape, 264, y, bufferofsonly);
+				GameMemToScreen(shape, PS3_WIDE_W - 320, y, bufferofsonly);
+				GameMemToScreen(shape, 0, y, bufferofsonly);
+				DrawPPic(310, y + 1, 8 >> 2, 16, (byte *)&erase->data, 2,
+						 true, bufferofsonly);
+				DrawPPic(PS3_WIDE_W - 320 + 4, y + 1, 8 >> 2, 16,
+						 (byte *)&erase->data, 2, true, bufferofsonly);
+			}
+			else
+#endif
 			if (iGLOBAL_SCREENWIDTH == 640)
 			{
 				// bna fix - not to good? but no one has 286 any more
@@ -468,6 +507,15 @@ void DrawPlayScreen(boolean bufferofsonly)
 		if (demoplayback)
 		{
 			shape = (pic_t *)W_CacheLumpName("demo", PU_CACHE, Cvt_pic_t, 1);
+#ifdef __PS3__
+			if (iGLOBAL_SCREENWIDTH == PS3_WIDE_W)
+			{
+				DrawPPic(148 * 2 + PS3_WIDE_OFS, 465, shape->width,
+						 shape->height, (byte *)&shape->data, 1, true,
+						 bufferofsonly);
+			}
+			else
+#endif
 			if (iGLOBAL_SCREENWIDTH == 640)
 			{
 				// DrawPPic( 148, 185, shape->width, shape->height,
@@ -1994,12 +2042,63 @@ void SingleDrawPPic(int xpos, int ypos, int width, int height, byte *src,
 //
 //****************************************************************************
 
+#ifdef __PS3__
+//****************************************************************************
+//
+// PS3_DrawPPic2x () - SingleDrawPPic at twice the size (LARGE HUD)
+//
+//****************************************************************************
+
+static void PS3_DrawPPic2x(int xpos, int ypos, int width, int height,
+						   byte *src, int num, boolean up)
+{
+	byte *base = (byte *)(bufferofs - screenofs);
+	int amt = up ? 8 : -8;
+	int planes, x, y, k;
+
+	for (planes = 0; planes < 4; planes++)
+	{
+		for (y = 0; y < height; y++)
+		{
+			for (x = 0; x < width; x++)
+			{
+				byte pixel = *src++;
+
+				if (pixel == 255)
+					continue;
+
+				for (k = 0; k < num; k++)
+				{
+					int sx = xpos + 2 * (planes + 4 * x + amt * k);
+					int sy = ypos + 2 * y;
+					byte *d;
+
+					if (sx < 0 || sx + 1 >= iGLOBAL_SCREENWIDTH || sy < 0 ||
+						sy + 1 >= iGLOBAL_SCREENHEIGHT)
+						continue;
+
+					d = base + ylookup[sy] + sx;
+					d[0] = d[1] = pixel;
+					d = base + ylookup[sy + 1] + sx;
+					d[0] = d[1] = pixel;
+				}
+			}
+		}
+	}
+}
+#endif
+
 void DrawStats(void)
 
 {
 	int percenthealth;
 	int health_y;
 	int ammo_y;
+	int health_x = iGLOBAL_HEALTH_X;
+	int ammo_x = iGLOBAL_AMMO_X;
+	int off16 = 16; // the icons' offset to the left of the bars
+	int one = 1;
+	void (*drawpic)(int, int, int, int, byte *, int, boolean) = SingleDrawPPic;
 
 	if ((!SHOW_PLAYER_STATS()) || (playstate == ex_died) ||
 		(locplayerstate->health <= 0))
@@ -2025,6 +2124,20 @@ void DrawStats(void)
 		ammo_y -= KILLS_HEIGHT;
 	}
 
+#ifdef __PS3__
+	// Video Settings > LARGE HUD: the 320x200 positions, doubled
+	if (PS3_LargeHudStats())
+	{
+		health_x = 20 * 2;
+		health_y = 185 * 2 + 80;
+		ammo_x = 300 * 2 + (iGLOBAL_SCREENWIDTH - 640); // WIDESCREEN: + 208
+		ammo_y = 184 * 2 + 80;
+		off16 = 32;
+		one = 2;
+		drawpic = PS3_DrawPPic2x;
+	}
+#endif
+
 	if (oldplayerhealth != locplayerstate->health)
 	{
 		oldplayerhealth = locplayerstate->health;
@@ -2042,18 +2155,18 @@ void DrawStats(void)
 
 	if (oldpercenthealth < 4)
 	{
-		SingleDrawPPic(iGLOBAL_HEALTH_X - 16, health_y, 8 >> 2, 16,
-					   (byte *)&health[3]->data, oldpercenthealth, true);
+		drawpic(health_x - off16, health_y, 8 >> 2, 16,
+				(byte *)&health[3]->data, oldpercenthealth, true);
 	}
 	else if (oldpercenthealth < 5)
 	{
-		SingleDrawPPic(iGLOBAL_HEALTH_X - 16, health_y, 8 >> 2, 16,
-					   (byte *)&health[4]->data, oldpercenthealth, true);
+		drawpic(health_x - off16, health_y, 8 >> 2, 16,
+				(byte *)&health[4]->data, oldpercenthealth, true);
 	}
 	else
 	{
-		SingleDrawPPic(iGLOBAL_HEALTH_X - 16, health_y, 8 >> 2, 16,
-					   (byte *)&health[5]->data, oldpercenthealth, true);
+		drawpic(health_x - off16, health_y, 8 >> 2, 16,
+				(byte *)&health[5]->data, oldpercenthealth, true);
 	}
 
 	if (ARMED(consoleplayer))
@@ -2063,21 +2176,21 @@ void DrawStats(void)
 			(gamestate.BattleOptions.Ammo == bo_infinite_shots))
 
 		{
-			SingleDrawPPic(iGLOBAL_AMMO_X - 16, ammo_y, 24 >> 2, 16,
-						   (byte *)&ammo[13]->data, 1, true);
+			drawpic(ammo_x - off16, ammo_y, 24 >> 2, 16,
+					(byte *)&ammo[13]->data, 1, true);
 		}
 #if (SHAREWARE == 0)
 		else if (locplayerstate->new_weapon == wp_dog)
 		{
-			SingleDrawPPic(iGLOBAL_AMMO_X - 16, ammo_y + 1, 24 >> 2, 16,
-						   (byte *)&ammo[25]->data, 1, true);
+			drawpic(ammo_x - off16, ammo_y + one, 24 >> 2, 16,
+					(byte *)&ammo[25]->data, 1, true);
 		}
 #endif
 		else
 		{
-			SingleDrawPPic(iGLOBAL_AMMO_X, ammo_y + 1, 8 >> 2, 16,
-						   (byte *)&ammo[13 + locplayerstate->new_weapon]->data,
-						   locplayerstate->ammo, false);
+			drawpic(ammo_x, ammo_y + one, 8 >> 2, 16,
+					(byte *)&ammo[13 + locplayerstate->new_weapon]->data,
+					locplayerstate->ammo, false);
 		}
 	}
 }

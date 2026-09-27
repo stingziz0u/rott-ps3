@@ -367,6 +367,12 @@ void Error(char *error, ...)
 		fprintf(stderr, "Area         = %ld\n", (long)level);
 	}
 
+#ifdef __PS3__
+	// ShutDown() never returns (it ends in exit): the message first
+	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, PACKAGE_STRING, msgbuf,
+							 NULL);
+#endif
+
 	ShutDown();
 
 	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, PACKAGE_STRING, msgbuf,
@@ -836,7 +842,10 @@ long ParseNum(char *str)
 	return atol(str);
 }
 
-#if (BYTE_ORDER == LITTLE_ENDIAN)
+#if !defined(__BYTE_ORDER__) || !defined(__ORDER_LITTLE_ENDIAN__)
+#error "the compiler doesn't say which byte order it targets"
+#endif
+#if (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
 #define KeepShort IntelShort
 #define SwapShort MotoShort
 #define KeepLong IntelLong

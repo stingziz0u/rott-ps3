@@ -39,6 +39,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "rt_battl.h"
 #include "rt_floor.h"
 #include "rt_str.h"
+#ifdef __PS3__
+#include <math.h>
+#include "rt_ps3.h"
+#endif
 #include "develop.h"
 
 #define LIGHTNINGLEVEL 4
@@ -77,10 +81,18 @@ byte *redmap;
 byte *greenmap;
 byte *playermaps[MAXPLAYERCOLORS];
 // short  pixelangle[MAXVIEWWIDTH];
-short pixelangle[800];
+short pixelangle[1024]; // PS3: 848 wide
 byte gammatable[GAMMAENTRIES];
 int gammaindex;
 int focalwidth = 160;
+
+// The view's center for the projection: centerx, but for WIDESCREEN the
+// center of the 640x480 view it widens (SetViewSize)
+#ifdef __PS3__
+static int projcenterx = 160;
+#else
+#define projcenterx centerx
+#endif
 int yzangleconverter;
 byte uniformcolors[MAXPLAYERCOLORS] = { 25,	 222, 29, 206, 52, 6,
 										155, 16,  90, 129, 109 };
@@ -152,12 +164,13 @@ void SetViewDelta(void)
 	// calculate scale value for vertical height calculations
 	// and sprite x calculations
 	//
-	scale = (centerx * focalwidth) / (160);
+	scale = (projcenterx * focalwidth) / (160);
 	//
 	// divide heightnumerator by a posts distance to get the posts height for
 	// the heightbuffer.  The pixel height is height>>HEIGHTFRACTION
 	//
-	heightnumerator = (((focalwidth / 10) * centerx * 4096) << HEIGHTFRACTION);
+	heightnumerator =
+		(((focalwidth / 10) * projcenterx * 4096) << HEIGHTFRACTION);
 }
 
 /*
@@ -200,8 +213,28 @@ void CalcProjection(void)
 	pangle = SafeMalloc(length * sizeof(int));
 	memcpy(pangle, ptr, length * sizeof(int));
 
+#ifdef __PS3__
+	if (projcenterx != centerx)
+	{
+		// WIDESCREEN: the table covers 45 degrees each side of a 4:3
+		// view, the edges of the wider one are past it. Same values
+		// (the table is atan of the distance from the center), computed.
+		for (i = 0; i < centerx; i++)
+		{
+			double u = (i + 0.5) / projcenterx;
+
+			intang = (int)(atan(u) * FINEANGLES / (2.0 * M_PI));
+			pixelangle[centerx - 1 - i] = (short)intang;
+			pixelangle[centerx + i] = (short)-intang;
+		}
+		i = centerx; // skip the table
+	}
+	else
+#endif
+		i = 0;
+
 	frac = ((length * 65536 / centerx)) >> 1;
-	for (i = 0; i < centerx; i++)
+	for (; i < centerx; i++)
 	{
 		// start 1/2 pixel over, so viewangle bisects two middle pixels
 		intang = pangle[frac >> 16];
@@ -265,6 +298,23 @@ void SetViewSize(int size)
 		viewsizes[height++] = 640;
 		viewsizes[height++] = 480;
 	}
+#ifdef __PS3__
+	// WIDESCREEN: the 640x480 sizes, as wide again in proportion
+	if (iGLOBAL_SCREENWIDTH == PS3_WIDE_W)
+	{
+		static const short sizes640[] = { 380, 336, 428, 352, 460, 368,
+										  492, 384, 524, 400, 556, 416,
+										  588, 432, 640, 448, 640, 464,
+										  640, 480, 640, 480 };
+
+		for (height = 0; height < (int)arrlen(sizes640); height += 2)
+		{
+			viewsizes[height] =
+				((sizes640[height] * PS3_WIDE_W / 640) + 2) & ~3;
+			viewsizes[height + 1] = sizes640[height + 1];
+		}
+	}
+#endif
 
 	if ((size < 0) || (size >= MAXVIEWSIZES))
 	{ // bna added
@@ -328,6 +378,14 @@ void SetViewSize(int size)
 
 	centerx = viewwidth >> 1;
 	centery = viewheight >> 1;
+#ifdef __PS3__
+	// WIDESCREEN: project as the 4:3 view this is a wider version of;
+	// what is past its sides is extra (more to see, nothing stretched)
+	if (iGLOBAL_SCREENWIDTH == PS3_WIDE_W)
+		projcenterx = centerx * 640 / PS3_WIDE_W;
+	else
+		projcenterx = centerx;
+#endif
 	centeryfrac = (centery << 16);
 	yzangleconverter = (0xaf85 * viewheight) / iGLOBAL_SCREENHEIGHT;
 

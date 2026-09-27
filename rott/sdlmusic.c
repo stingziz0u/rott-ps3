@@ -129,6 +129,12 @@ int SDLmusic_Init(int dummy)
 {
 	(void)dummy;
 
+#ifdef __PS3__
+	// the PS3's music is the AdLib driver (ps3/source/ps3_midi.c): no
+	// soundfont to look for
+	sdl_inited = 1;
+#endif
+
 	if (sdl_inited == 0)
 	{
 		const char *mix_soundfont = Mix_GetSoundFonts();

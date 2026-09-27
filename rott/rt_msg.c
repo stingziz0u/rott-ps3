@@ -18,6 +18,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 #include "rt_def.h"
+#ifdef __PS3__
+#include "rt_ps3.h"
+#endif
 #include "rt_view.h"
 #include "z_zone.h"
 #include "w_wad.h"
@@ -445,6 +448,12 @@ void DisplayMessage(int num, int position)
 	{
 		PrintY += 16;
 	}
+#ifdef __PS3__
+	if (PS3_LargeHudTop())
+	{
+		PrintY += 16; // below the 2x top bar
+	}
+#endif
 	if (!MessagesEnabled)
 	{
 		switch (Messages[num].flags)
@@ -484,7 +493,7 @@ void DisplayMessage(int num, int position)
 			{
 				PrintX += 8 * 8;
 			}
-			else if (iGLOBAL_SCREENWIDTH == 640)
+			else if (iGLOBAL_SCREENWIDTH >= 640) // PS3: and 848
 			{
 				PrintX += 8 * 8 * 2;
 			}
@@ -534,6 +543,10 @@ void RestoreMessageBackground(void)
 	if (UpdateMessageBackground > 0)
 	{
 		y = 18;
+#ifdef __PS3__
+		if (PS3_LargeHudTop())
+			y += 16; // DisplayMessage moved them down
+#endif
 		for (i = 0; i < MAXMSGS; i++)
 		{
 			if (EraseMessage[i])

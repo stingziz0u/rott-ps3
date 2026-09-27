@@ -6,6 +6,8 @@
  * Written by Ryan C. Gordon. (icculus@clutteredmind.org)
  */
 
+#include <math.h>
+
 #include "SDL_mixer.h"
 
 #include "rt_util.h"

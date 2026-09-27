@@ -25,6 +25,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //******************************************************************************
 
 #include <stdlib.h>
+#ifdef __PS3__
+#include <setjmp.h>
+#endif
 #include <stdio.h>
 #include <stdarg.h>
 #include <fcntl.h>
@@ -40,6 +43,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <sys/stat.h>
 
 #include "rt_def.h"
+#ifdef __PS3__
+#include "rt_ps3.h"
+#endif
 #include "_rt_menu.h"
 #include "rt_menu.h"
 #include "rt_sound.h"
@@ -545,16 +551,43 @@ CP_itemtype PlayerMenu[] = {
 	{ 1, "name5\0", 'I', { NULL } },
 };
 
+#ifdef __PS3__
+// The DualShock 3 and the TV replace the PC's controls and window options
+// (keyboard, mouse, joystick, fullscreen): see the end of this file.
+static void CP_PS3Controller(void);
+static void CP_PS3Video(void);
+static void CP_PS3Synth(void);
+
+CP_MenuNames ControlMMenuNames[] = { "CONTROLLER",	   "USER OPTIONS",
+									 "VIDEO SETTINGS", "MUSIC SYNTH",
+									 "MUSIC VOLUME",   "SOUND FX VOLUME" };
+#else
 CP_MenuNames ControlMMenuNames[] = { "CONTROLS", "USER OPTIONS",
 									 "EXT USER OPTIONS", // bna added
 									 "MUSIC VOLUME", "SOUND FX VOLUME"
 
 };
+#endif
+#ifdef __PS3__
+CP_iteminfo ControlMItems = { 32, 48 - 8, 6, 0, 32, ControlMMenuNames,
+							  mn_largefont };
+#else
 CP_iteminfo ControlMItems = { 32,		   48 - 8, 5, 0, 32, ControlMMenuNames,
 							  mn_largefont }; // bna added
+#endif
 // CP_iteminfo ControlMItems = {32, 48, 4, 0, 32, ControlMMenuNames,
 // mn_largefont };
 
+#ifdef __PS3__
+CP_itemtype ControlMMenu[] = {
+	{ 2, "cntl\0", 'C', { .vv = CP_PS3Controller } },
+	{ 1, "uopt\0", 'U', { .vv = CP_OptionsMenu } },
+	{ 1, "euopt\0", 'V', { .vv = CP_PS3Video } },
+	{ 1, "muvolumn\0", 'Y', { .vv = CP_PS3Synth } },
+	{ 1, "muvolumn\0", 'M', { .vv = MusicVolume } },
+	{ 1, "fxvolumn\0", 'S', { .vv = FXVolume } }
+};
+#else
 CP_itemtype ControlMMenu[] = {
 	{ 2, "cntl\0", 'C', { .vv = CP_Control } },
 	{ 1, "uopt\0", 'U', { .vv = CP_OptionsMenu } },
@@ -562,12 +595,22 @@ CP_itemtype ControlMMenu[] = {
 	{ 1, "muvolumn\0", 'M', { .vv = MusicVolume } },
 	{ 1, "fxvolumn\0", 'S', { .vv = FXVolume } }
 };
+#endif
 
+#ifdef __PS3__
+// No FLOOR AND CEILING (off, taradino leaves the floor and ceiling
+// undrawn: smeared graphics) and no DOUBLE-CLICK SPEED (a mouse option)
+CP_MenuNames OptionsNames[] = { "AUTO DETAIL ADJUST", "LIGHT DIMINISHING",
+								"BOBBIN'",			  "MENU FLIP SPEED",
+								"DETAIL LEVELS",	  "VIOLENCE LEVEL",
+								"SCREEN SIZE" };
+#else
 CP_MenuNames OptionsNames[] = {
 	"AUTO DETAIL ADJUST", "LIGHT DIMINISHING",	"BOBBIN'",
 	"FLOOR AND CEILING",  "DOUBLE-CLICK SPEED", "MENU FLIP SPEED",
 	"DETAIL LEVELS",	  "VIOLENCE LEVEL",		"SCREEN SIZE"
 };
+#endif
 // bna added
 CP_MenuNames ExtOptionsNames[] = { "MOUSE LOOK", "INVERT MOUSE", "CROSSHAIR",
 								   "FULLSCREEN", "ADLIB MUSIC" };
@@ -582,6 +625,19 @@ CP_itemtype ExtOptionsMenu[] = {
 
 // bna added end
 
+#ifdef __PS3__
+CP_iteminfo OptionsItems = { 20, MENU_Y, 7, 0, 43, OptionsNames, mn_largefont };
+
+CP_itemtype OptionsMenu[] = {
+	{ 2, "autoadj\0", 'A', { NULL } },
+	{ 1, "lightdim\0", 'L', { NULL } },
+	{ 1, "bobbin\0", 'B', { NULL } },
+	{ 1, "menuspd\0", 'M', { .vv = MenuFlipSpeed } },
+	{ 1, "detail\0", 'D', { .vv = CP_DetailMenu } },
+	{ 1, "vlevel\0", 'V', { .vv = CP_ViolenceMenu } },
+	{ 1, "\0", 'S', { .vv = CP_ScreenSize } }
+};
+#else
 CP_iteminfo OptionsItems = { 20, MENU_Y, 9, 0, 43, OptionsNames, mn_largefont };
 
 CP_itemtype OptionsMenu[] = {
@@ -595,6 +651,7 @@ CP_itemtype OptionsMenu[] = {
 	{ 1, "vlevel\0", 'V', { .vv = CP_ViolenceMenu } },
 	{ 1, "\0", 'S', { .vv = CP_ScreenSize } }
 };
+#endif
 
 CP_MenuNames DetailMenuNames[] = { "LOW DETAIL", "MEDIUM DETAIL",
 								   "HIGH DETAIL" };
@@ -1249,6 +1306,10 @@ void SetUpControlPanel(void)
 		for (i = 0; i < Xres; i += 4)
 		{
 			b = (byte *)bufferofs + i; // schrink screen to 1/2 size
+#ifdef __PS3__
+			if (iGLOBAL_SCREENWIDTH == PS3_WIDE_W)
+				b += PS3_WIDE_OFS; // WIDESCREEN: the middle 4:3
+#endif
 			for (j = 0; j < (Yres / 4);
 				 j++, s++, b += (iGLOBAL_SCREENWIDTH << 1) * 2)
 				*s = *b;
@@ -1537,6 +1598,18 @@ menuitems CP_MainMenu(void)
 				break;
 
 			case -1:
+#ifdef __PS3__
+				// circle / START leave the menu (back to the game or the
+				// demos), as in every other menu; Quit is the menu item
+				if (!ingame)
+				{
+					playstate = ex_titles;
+				}
+
+				StartGame = true;
+				DisableScreenStretch();
+				break;
+#endif
 				CP_Quit(0);
 				break;
 
@@ -2916,6 +2989,61 @@ void DrawStoredGame(byte *pic, int episode, int area)
 	DrawMenuBufPicture(SaveGamePicX, SaveGamePicY, pic, 160, 100);
 }
 
+#ifdef __PS3__
+//******************************************************************************
+//
+// A saved game that doesn't match the level data (a different episode's
+// or version's map): taradino stops with a fatal error half way through
+// the load. On the PS3 the load is abandoned and the game ends, back to
+// the menu, like END GAME.
+//
+//******************************************************************************
+
+static jmp_buf ps3_loadjmp;
+static int ps3_loading;
+
+void PS3_LoadMismatch(const char *what, int level, int saved)
+{
+	printf("Load Game: different number of %s (level %d, saved %d)\n", what,
+		   level, saved);
+
+	if (ps3_loading)
+		longjmp(ps3_loadjmp, 1);
+}
+
+static void PS3_LoadFailed(boolean wasingame, exit_t oldplaystate)
+{
+	// the current level was freed and the saved one half loaded
+	Z_FreeTags(PU_LEVELSTRUCT, PU_LEVELEND);
+
+	if (wasingame)
+	{
+		locplayerstate->lives = 0;
+		playstate = ex_died;
+		damagecount = 0;
+		SetBorderColor(0);
+		AdjustMenuStruct();
+		ingame = false;
+		GamePaused = false;
+	}
+	else
+	{
+		playstate = oldplaystate;
+	}
+
+	ROTTMAPS = ORIG_ROTTMAPS;
+	loadedgame = false;
+	EnableScreenStretch();
+
+	CP_ErrorMsg("Load Game",
+				"This saved game doesn't match the game's levels "
+				"(another episode or version). It can't be loaded.",
+				mn_smallfont);
+
+	DrawLoadSaveScreenAlt(0);
+}
+#endif
+
 //******************************************************************************
 //
 // DoLoad ()
@@ -2926,6 +3054,7 @@ int DoLoad(int which)
 {
 	gamestorage_t game;
 	int exit = 0;
+	boolean loaded;
 
 	if ((which >= 0) && SaveGamesAvail[which])
 	{
@@ -2934,7 +3063,27 @@ int DoLoad(int which)
 		if (loadsavesound)
 			MN_PlayMenuSnd(SD_SELECTSND);
 
-		if (LoadTheGame(which, &game) == true)
+#ifdef __PS3__
+		{
+			boolean wasingame = ingame;
+			exit_t oldplaystate = playstate;
+
+			if (setjmp(ps3_loadjmp))
+			{
+				ps3_loading = 0;
+				PS3_LoadFailed(wasingame, oldplaystate);
+				return 0;
+			}
+
+			ps3_loading = 1;
+			loaded = LoadTheGame(which, &game);
+			ps3_loading = 0;
+		}
+#else
+		loaded = LoadTheGame(which, &game);
+#endif
+
+		if (loaded == true)
 		{
 			MenuFixup();
 			DisableScreenStretch();
@@ -3197,6 +3346,13 @@ int CP_SaveGame(void)
 			DrawStoredGame(savedscreen, gamestate.episode, gamestate.mapon);
 
 			strcpy(input, &SaveGameNames[which][0]);
+#ifdef __PS3__
+			// no keyboard: a name to confirm with X (handoff notes 3.45)
+			if (!input[0])
+			{
+				M_snprintf(input, sizeof(input), "Save %d", which + 1);
+			}
+#endif
 
 			if (!SaveGamesAvail[which])
 				EraseMenuBufRegion(LSM_X + LSItems.indent + 1,
@@ -4783,6 +4939,10 @@ void CP_ExtOptionsMenu(void)
 				DrawExtOptionsButtons();
 				break;
 			case 4:
+#ifdef __PS3__
+				// the PS3's music is always the AdLib driver (ps3_midi.c)
+				break;
+#endif
 				if (MusicMode > 0)
 				{
 					MusicMode = 3 - MusicMode;
@@ -4834,8 +4994,12 @@ void DrawExtOptionsButtons(void)
 						on = 1;
 					break;
 				case 4:
+#ifdef __PS3__
+					on = (MusicMode > 0);
+#else
 					if (MusicMode == 2)
 						on = 1;
+#endif
 					break;
 			}
 
@@ -4878,10 +5042,12 @@ void CP_OptionsMenu(void)
 				BobbinOn ^= 1;
 				DrawOptionsButtons();
 				break;
+#ifndef __PS3__
 			case 3:
 				fandc ^= 1;
 				DrawOptionsButtons();
 				break;
+#endif
 		}
 
 	} while (which >= 0);
@@ -4904,7 +5070,11 @@ void DrawOptionsButtons(void)
 	button_on = W_GetNumForName("snd_on");
 	button_off = W_GetNumForName("snd_off");
 
+#ifdef __PS3__
+	for (i = 0; i < 3; i++) // the three on/off items
+#else
 	for (i = 0; i < OptionsItems.amount - 5; i++)
+#endif
 		if (OptionsMenu[i].active != CP_Active3)
 		{
 			//
@@ -8221,3 +8391,533 @@ void CP_ErrorMsg(char *title, char *error, int font)
 
 	MN_PlayMenuSnd(SD_ESCPRESSEDSND);
 }
+
+#ifdef __PS3__
+//******************************************************************************
+//
+// PS3: Options > Controller and Options > Video Settings
+//
+// Built from the game's own menu pieces (the lists, on/off buttons and
+// sliders of the PC's options), so they look like the rest of ROTT.
+//
+//******************************************************************************
+
+#include "ps3_platform.h"
+#include "ps3_pad.h"
+#include "ps3_video.h"
+#include "rt_ps3.h"
+
+static void DrawPS3CtlMenu(void);
+static void DrawPS3VideoMenu(void);
+static void CP_PS3Buttons(void);
+static void PS3StickSensitivity(void);
+static void PS3DefineButton(void);
+static void PS3ScreenFit(void);
+
+//
+// Controller
+//
+
+CP_MenuNames PS3CtlNames[] = { "CUSTOMIZE BUTTONS", "STICK SENSITIVITY",
+							   "INVERT AIM", "SWAP STICKS",
+							   "DEFAULT BUTTONS" };
+
+CP_iteminfo PS3CtlItems = { 20, MENU_Y, 5, 0, 43, PS3CtlNames, mn_largefont };
+
+CP_itemtype PS3CtlMenu[] = { { 2, "", 'C', { .vv = CP_PS3Buttons } },
+							 { 1, "", 'S', { .vv = PS3StickSensitivity } },
+							 { 1, "", 'I', { NULL } },
+							 { 1, "", 'S', { NULL } },
+							 { 1, "", 'D', { NULL } } };
+
+static void DrawPS3ToggleButtons(CP_iteminfo *item_i, CP_itemtype *items,
+								 const int *toggles)
+{
+	int button_on = W_GetNumForName("snd_on");
+	int button_off = W_GetNumForName("snd_off");
+	int i;
+
+	for (i = 0; i < item_i->amount; i++)
+	{
+		if (toggles[i] < 0 || items[i].active == CP_Active3)
+			continue;
+
+		DrawMenuBufItem(item_i->x + 22, item_i->y + i * 14 - 1,
+						toggles[i] ? button_on : button_off);
+	}
+}
+
+static void DrawPS3CtlButtons(void)
+{
+	int toggles[5] = { -1, -1, ps3_invertaim, ps3_swapsticks, -1 };
+
+	DrawPS3ToggleButtons(&PS3CtlItems, &PS3CtlMenu[0], toggles);
+}
+
+static void DrawPS3CtlMenu(void)
+{
+	MenuNum = 1;
+
+	SetAlternateMenuBuf();
+	ClearMenuBuf();
+	SetMenuTitle("Controller");
+
+	MN_GetCursorLocation(&PS3CtlItems, &PS3CtlMenu[0]);
+	DrawMenu(&PS3CtlItems, &PS3CtlMenu[0]);
+	DrawPS3CtlButtons();
+	DisplayInfo(0);
+
+	FlipMenuBuf();
+}
+
+static void CP_PS3Controller(void)
+{
+	int which, i;
+
+	DrawPS3CtlMenu();
+
+	do
+	{
+		which = HandleMenu(&PS3CtlItems, &PS3CtlMenu[0], NULL);
+
+		switch (which)
+		{
+			case 2:
+				ps3_invertaim ^= 1;
+				DrawPS3CtlButtons();
+				break;
+
+			case 3:
+				ps3_swapsticks ^= 1;
+				DrawPS3CtlButtons();
+				break;
+
+			case 4:
+				for (i = 0; i < PS3_NUMACTIONS; i++)
+					ps3_binding[i] = ps3_default_binding[i];
+
+				PS3_ApplyControllerSettings();
+				CP_ErrorMsg("Controller",
+							"The buttons are back to their defaults.",
+							mn_smallfont);
+				DrawPS3CtlMenu();
+				break;
+		}
+	} while (which >= 0);
+
+	DrawControlMenu();
+}
+
+//
+// Customize buttons: the "Customize Keyboard" screen, for the pad
+//
+
+#define PS3BTN_Y 40
+#define PS3BTN_NAMEINDEX 21
+
+static CP_MenuNames PS3BtnNames[PS3_NUMACTIONS];
+
+CP_iteminfo PS3BtnItems = { NORMALKEY_X, PS3BTN_Y + 1, PS3_NUMACTIONS, 0, 16,
+							PS3BtnNames, mn_tinyfont };
+
+CP_itemtype PS3BtnMenu[PS3_NUMACTIONS] = {
+	{ 2, "\0", 'F', { .vv = PS3DefineButton } },
+	{ 1, "\0", 'R', { .vv = PS3DefineButton } },
+	{ 1, "\0", 'O', { .vv = PS3DefineButton } },
+	{ 1, "\0", 'V', { .vv = PS3DefineButton } },
+	{ 1, "\0", 'T', { .vv = PS3DefineButton } },
+	{ 1, "\0", 'N', { .vv = PS3DefineButton } },
+	{ 1, "\0", 'D', { .vv = PS3DefineButton } },
+	{ 1, "\0", 'A', { .vv = PS3DefineButton } },
+	{ 1, "\0", 'C', { .vv = PS3DefineButton } },
+	{ 1, "\0", 'M', { .vv = PS3DefineButton } },
+	{ 1, "\0", 'S', { .vv = PS3DefineButton } },
+	{ 1, "\0", 'U', { .vv = PS3DefineButton } },
+	{ 1, "\0", 'W', { .vv = PS3DefineButton } }
+};
+
+static void DrawPS3BtnHelp(void)
+{
+	CurrentFont = tinyfont;
+	PrintX = NORMALKEY_X;
+	PrintY = PS3BTN_Y + PS3_NUMACTIONS * FontSize[mn_tinyfont] + 4;
+	DrawMenuBufPropString(PrintX, PrintY,
+						  "X, then the new button. START cancels.");
+	PrintX = NORMALKEY_X;
+	PrintY += 8;
+	DrawMenuBufPropString(PrintX, PrintY, "Sticks and d-pad are fixed.");
+}
+
+static void PS3BtnSetName(int i)
+{
+	M_snprintf(PS3BtnNames[i], sizeof(PS3BtnNames[i]), "%-19s\x9 %s",
+			   ps3_action_name[i],
+			   PS3_ButtonName((unsigned)ps3_binding[i]));
+}
+
+static void DrawPS3Buttons(void)
+{
+	int i;
+
+	SetAlternateMenuBuf();
+	ClearMenuBuf();
+	SetMenuTitle("Customize Buttons");
+
+	for (i = 0; i < PS3_NUMACTIONS; i++)
+		PS3BtnSetName(i);
+
+	MN_GetCursorLocation(&PS3BtnItems, &PS3BtnMenu[0]);
+	DrawMenu(&PS3BtnItems, &PS3BtnMenu[0]);
+	DrawPS3BtnHelp();
+
+	DisplayInfo(0);
+	FlipMenuBuf();
+}
+
+static void CP_PS3Buttons(void)
+{
+	int which;
+
+	MenuNum = 1;
+	DrawPS3Buttons();
+
+	do
+	{
+		which = HandleMenu(&PS3BtnItems, &PS3BtnMenu[0], NULL);
+	} while (which >= 0);
+
+	PS3_ApplyControllerSettings();
+	DrawPS3CtlMenu();
+}
+
+static void PS3DefineButton(void)
+{
+	boolean tick = false;
+	int timer = GetTicCount();
+	int x = NORMALKEY_X + 97;
+	int y = PS3BTN_Y + (handlewhich * FontSize[PS3BtnItems.fontsize]);
+	unsigned picked = 0;
+	int i;
+
+	PS3BtnNames[handlewhich][PS3BTN_NAMEINDEX] = '\0';
+	strcat(PS3BtnNames[handlewhich], "        ");
+
+	ClearMenuBuf();
+	DrawMenu(&PS3BtnItems, &PS3BtnMenu[0]);
+	DrawPS3BtnHelp();
+	DisplayInfo(0);
+
+	DrawMenuBufIString(x + 3, y, "?", 0);
+	DrawMenuBufIString(x + 2, y - 1, "?", HIGHLIGHTCOLOR);
+	RefreshMenuBuf(0);
+
+	// the pad goes straight to us: X doesn't type Enter meanwhile
+	PS3_Input_Capture(1);
+
+	while (!picked && !PS3_ExitRequested())
+	{
+		unsigned pressed;
+
+		if ((GetTicCount() - timer) > 10)
+		{
+			DrawMenuBufIString(x + 3, y, "?", 0);
+			DrawMenuBufIString(x + 2, y - 1, "?",
+							   tick ? HIGHLIGHTCOLOR : DIMMEDCOLOR);
+			tick = !tick;
+			timer = GetTicCount();
+		}
+
+		RefreshMenuBuf(0);
+
+		pressed = PS3_Input_CapturePressed();
+
+		if (pressed & PS3_PAD_START)
+			break;   // cancel: the button stays as it was
+
+		for (i = 0; i < PS3_NUMBINDABLE; i++)
+		{
+			if (pressed & ps3_bindable[i])
+			{
+				picked = ps3_bindable[i];
+				break;
+			}
+		}
+	}
+
+	PS3_Input_Capture(0);
+	IN_ClearKeysDown();
+
+	if (picked)
+	{
+		// one button, one action: whoever had it loses it
+		for (i = 0; i < PS3_NUMACTIONS; i++)
+			if (i != handlewhich && (unsigned)ps3_binding[i] == picked)
+				ps3_binding[i] = 0;
+
+		ps3_binding[handlewhich] = (int)picked;
+		MN_PlayMenuSnd(SD_SELECTSND);
+	}
+	else
+	{
+		MN_PlayMenuSnd(SD_ESCPRESSEDSND);
+	}
+
+	for (i = 0; i < PS3_NUMACTIONS; i++)
+		PS3BtnSetName(i);
+
+	ClearMenuBuf();
+	SetMenuTitle("Customize Buttons");
+	DrawMenu(&PS3BtnItems, &PS3BtnMenu[0]);
+	DrawPS3BtnHelp();
+	DisplayInfo(0);
+	RefreshMenuBuf(0);
+}
+
+//
+// Stick sensitivity: the "Mouse Sensitivity" sliders
+//
+
+static void PS3DeadzoneChanged(int w)
+{
+	PS3_Input_SetDeadzone(w);
+}
+
+static void PS3StickSensitivity(void)
+{
+	menuslider_t sliders[3] = {
+		{ &ps3_turnspeed, 20, 1, 21, 81 - 32, 240, 1, "block2", NULL,
+		  "Turn speed:", "" },
+		{ &ps3_aimspeed, 20, 1, 21, 81, 240, 1, "block2", NULL,
+		  "Aim speed:", "" },
+		{ &ps3_deadzone, 40, 5, 21, 81 + 32, 240, 1, "block2",
+		  PS3DeadzoneChanged, "Dead zone:", "" }
+	};
+
+	MultipleSliderMenu("Stick Sensitivity", arrlen(sliders), sliders);
+	PS3_ApplyControllerSettings();
+	DrawPS3CtlMenu();
+}
+
+//
+// Video Settings
+//
+
+CP_MenuNames PS3VideoNames[] = { "SCREEN FIT", "SMOOTH FILTER", "SHOW FPS",
+								 "CROSSHAIR", "LARGE HUD", "WIDESCREEN",
+								 "LOW RESOLUTION" };
+
+CP_iteminfo PS3VideoItems = { 20, MENU_Y, 7, 0, 43, PS3VideoNames,
+							  mn_largefont };
+
+CP_itemtype PS3VideoMenu[] = { { 2, "", 'S', { .vv = PS3ScreenFit } },
+							   { 1, "", 'S', { NULL } },
+							   { 1, "", 'S', { NULL } },
+							   { 1, "", 'C', { NULL } },
+							   { 1, "", 'H', { NULL } },
+							   { 1, "", 'W', { NULL } },
+							   { 1, "", 'L', { NULL } } };
+
+static void DrawPS3VideoButtons(void)
+{
+	int toggles[7] = { -1,			 ps3_filter,	 ps3_showfps, iG_aimCross,
+					   ps3_largehud, ps3_widescreen, ps3_lowres };
+
+	DrawPS3ToggleButtons(&PS3VideoItems, &PS3VideoMenu[0], toggles);
+}
+
+static void DrawPS3VideoMenu(void)
+{
+	MenuNum = 1;
+
+	SetAlternateMenuBuf();
+	ClearMenuBuf();
+	SetMenuTitle("Video Settings");
+
+	MN_GetCursorLocation(&PS3VideoItems, &PS3VideoMenu[0]);
+	DrawMenu(&PS3VideoItems, &PS3VideoMenu[0]);
+	DrawPS3VideoButtons();
+	DisplayInfo(0);
+
+	FlipMenuBuf();
+}
+
+static void PS3ScreenFitChanged(int w)
+{
+	PS3_Video_SetFit(w);
+}
+
+static void PS3ScreenFit(void)
+{
+	SliderMenu(&ps3_screenfit, 100, 70, 33, 81, 225, 5, "block3",
+			   PS3ScreenFitChanged, "Screen Fit", "Small", "Full");
+	PS3_ApplyVideoSettings();
+	DrawPS3VideoMenu();
+}
+
+static void CP_PS3Video(void)
+{
+	int which;
+
+	DrawPS3VideoMenu();
+
+	do
+	{
+		which = HandleMenu(&PS3VideoItems, &PS3VideoMenu[0], NULL);
+
+		switch (which)
+		{
+			case 1:
+				ps3_filter ^= 1;
+				PS3_ApplyVideoSettings();
+				DrawPS3VideoButtons();
+				break;
+
+			case 2:
+				ps3_showfps ^= 1;
+				PS3_ApplyVideoSettings();
+				DrawPS3VideoButtons();
+				break;
+
+			case 3:
+				iG_aimCross ^= 1;
+				DrawPS3VideoButtons();
+				break;
+
+			case 4:
+				ps3_largehud ^= 1;
+				DrawPS3VideoButtons();
+				break;
+
+			case 5:
+			case 6:
+				if (which == 5)
+					ps3_widescreen ^= 1;
+				else
+					ps3_lowres ^= 1;
+
+				CP_ErrorMsg("Resolution",
+							ps3_lowres
+								? "320x200, the original resolution, is used "
+								  "the next time the game starts."
+							: ps3_widescreen
+								? "848x480, widescreen, is used the next time "
+								  "the game starts."
+								: "640x480 is used the next time the game "
+								  "starts.",
+							mn_smallfont);
+				DrawPS3VideoMenu();
+				break;
+		}
+	} while (which >= 0);
+
+	DrawControlMenu();
+}
+
+//
+// Music Synth: the original AdLib music, or General MIDI through a
+// SoundFont the player copies to USRDIR (ps3_sf2.c)
+//
+
+CP_MenuNames PS3SynthNames[] = { "ADLIB (ORIGINAL)", "SOUNDFONT (.SF2)" };
+
+CP_iteminfo PS3SynthItems = { 20, MENU_Y, 2, 0, 43, PS3SynthNames,
+							  mn_largefont };
+
+CP_itemtype PS3SynthMenu[] = { { 2, "", 'A', { NULL } },
+							   { 1, "", 'S', { NULL } } };
+
+static void DrawPS3SynthButtons(void)
+{
+	int toggles[2] = { !ps3_musicsf2, ps3_musicsf2 };
+
+	DrawPS3ToggleButtons(&PS3SynthItems, &PS3SynthMenu[0], toggles);
+}
+
+static void DrawPS3SynthMenu(const char *status)
+{
+	const char *name = PS3_Music_SoundFontName();
+	char line[64];
+
+	MenuNum = 1;
+
+	SetAlternateMenuBuf();
+	ClearMenuBuf();
+	SetMenuTitle("Music Synth");
+
+	MN_GetCursorLocation(&PS3SynthItems, &PS3SynthMenu[0]);
+	DrawMenu(&PS3SynthItems, &PS3SynthMenu[0]);
+	DrawPS3SynthButtons();
+
+	CurrentFont = tinyfont;
+	PrintX = 36;
+	PrintY = MENU_Y + 2 * FontSize[mn_largefont] + 14;
+
+	if (status)
+	{
+		DrawMenuBufPropString(PrintX, PrintY, status);
+	}
+	else if (name)
+	{
+		M_snprintf(line, sizeof(line), "In use: %.40s", name);
+		DrawMenuBufPropString(PrintX, PrintY, line);
+	}
+	else
+	{
+		DrawMenuBufPropString(PrintX, PrintY,
+							  "SoundFont: a General MIDI .sf2 file");
+		PrintX = 36;
+		PrintY += 8;
+		DrawMenuBufPropString(PrintX, PrintY,
+							  "copied to the game's USRDIR folder.");
+	}
+
+	DisplayInfo(0);
+
+	FlipMenuBuf();
+}
+
+static void CP_PS3Synth(void)
+{
+	int which;
+
+	DrawPS3SynthMenu(NULL);
+
+	do
+	{
+		which = HandleMenu(&PS3SynthItems, &PS3SynthMenu[0], NULL);
+
+		switch (which)
+		{
+			case 0:
+				if (ps3_musicsf2)
+				{
+					ps3_musicsf2 = PS3_Music_UseSoundFont(0);
+					DrawPS3SynthMenu(NULL);
+				}
+				break;
+
+			case 1:
+				if (!ps3_musicsf2)
+				{
+					// a big SoundFont takes a few seconds to load
+					DrawPS3SynthMenu("Loading the SoundFont...");
+					ps3_musicsf2 = PS3_Music_UseSoundFont(1);
+
+					if (!ps3_musicsf2)
+					{
+						CP_ErrorMsg("SoundFont",
+									"No SoundFont could be loaded. Copy a "
+									"General MIDI SoundFont (.sf2) to "
+									"USRDIR (see the log for details).",
+									mn_smallfont);
+					}
+
+					DrawPS3SynthMenu(NULL);
+				}
+				break;
+		}
+	} while (which >= 0);
+
+	DrawControlMenu();
+}
+#endif

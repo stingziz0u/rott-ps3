@@ -1,0 +1,10 @@
+# build output (make -C ps3)
+/obj/
+/build/
+/pkgfiles/
+*.elf
+*.self
+*.pkg
+# host harness
+/hosttest/obj-*/
+/hosttest/rott-host-*

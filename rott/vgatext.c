@@ -139,7 +139,10 @@ int vgatext_main(SDL_Window *window, Uint16 *screen)
 	{
 		for (int x = 0; x < 80; x++)
 		{
-			uint16_t cell = screen[y * 80 + x];
+			// the cells are stored little-endian (character, then
+			// attribute): read them byte by byte, not as a native uint16
+			const uint8_t *b = (const uint8_t *)&screen[y * 80 + x];
+			uint16_t cell = (uint16_t)(b[0] | (b[1] << 8));
 			uint8_t *imgpos0 = &image0[y * 16][x * 8];
 			uint8_t *imgpos1 = &image1[y * 16][x * 8];
 

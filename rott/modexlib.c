@@ -22,6 +22,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "rt_util.h"
 #include "rt_net.h" // for GamePaused
 #include "isr.h"	// for VBLCOUNTER
+#ifdef __PS3__
+#include "rt_ps3.h"
+#endif
 
 static void StretchMemPicture();
 // GLOBAL VARIABLES
@@ -445,6 +448,26 @@ static void StretchMemPicture()
 	dest.y = 0;
 	dest.w = iGLOBAL_SCREENWIDTH;
 	dest.h = iGLOBAL_SCREENHEIGHT;
+#ifdef __PS3__
+	// WIDESCREEN: the 320x200 screens (menus, maps, intermissions) stay
+	// 4:3, in the middle, black at the sides
+	if (iGLOBAL_SCREENWIDTH == PS3_WIDE_W)
+	{
+		SDL_Rect side;
+
+		dest.w = 640;
+		dest.x = PS3_WIDE_OFS;
+
+		side.x = 0;
+		side.y = 0;
+		side.w = dest.x;
+		side.h = iGLOBAL_SCREENHEIGHT;
+		SDL_FillRect(sdl_surface, &side, 0);
+		side.x = dest.x + dest.w;
+		side.w = iGLOBAL_SCREENWIDTH - side.x;
+		SDL_FillRect(sdl_surface, &side, 0);
+	}
+#endif
 	StretchFunc.BlitScaled(unstretch_sdl_surface, &src, sdl_surface, &dest);
 }
 
@@ -471,7 +494,7 @@ void DrawCenterAim()
 			{
 				iG_playerTilt = -(2048 - iG_playerTilt);
 			}
-			if (iGLOBAL_SCREENWIDTH == 640)
+			if (iGLOBAL_SCREENWIDTH >= 640) // PS3: also 848 (WIDESCREEN)
 			{
 				x = iG_playerTilt;
 				iG_playerTilt = x / 2;

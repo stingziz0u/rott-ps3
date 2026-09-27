@@ -53,6 +53,12 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "rt_net.h"
 #include "rt_dmand.h"
 
+#ifdef __PS3__
+#include "ps3_platform.h"
+#include "ps3_pad.h"
+#include "rt_ps3.h"
+#endif
+
 #define FLYINGZMOM 350000
 
 specials CurrentSpecialsTimes = {
@@ -2399,6 +2405,297 @@ void PollMove(void)
 	}
 }
 
+#ifdef __PS3__
+//******************************************************************************
+//
+// DualShock 3 (ps3/source/ps3_input.c hands us the pad every tic)
+//
+// Fixed: left stick move / strafe, right stick turn / aim up-down (swapped
+// with "Swap sticks"), d-pad move and turn, START menu. The rest is
+// assigned in Options > Controller (ps3_binding, saved in CONFIG.ROT).
+// Defaults:
+//
+//   R2 fire              L2 run (hold)          X use / open
+//   circle volte-face    square bullet<->missile triangle next bullet weapon
+//   R1 drop weapon       L1 autorun             R3 center the view
+//   SELECT map           L3 strafe (hold: the right stick strafes)
+//
+//******************************************************************************
+
+const unsigned ps3_bindable[PS3_NUMBINDABLE] = {
+	PS3_PAD_CROSS, PS3_PAD_CIRCLE, PS3_PAD_SQUARE, PS3_PAD_TRIANGLE,
+	PS3_PAD_L1,	   PS3_PAD_R1,	   PS3_PAD_L2,	   PS3_PAD_R2,
+	PS3_PAD_L3,	   PS3_PAD_R3,	   PS3_PAD_SELECT
+};
+
+const char *const ps3_bindable_name[PS3_NUMBINDABLE] = {
+	"CROSS", "CIRCLE", "SQUARE", "TRIANGLE", "L1",	   "R1",
+	"L2",	 "R2",	   "L3",	 "R3",		 "SELECT"
+};
+
+const char *const ps3_action_name[PS3_NUMACTIONS] = {
+	"FIRE",		   "RUN",		  "OPEN",		 "VOLTE-FACE",
+	"TOGGLE WEAPON", "NEXT WEAPON", "DROP WEAPON", "AUTORUN",
+	"CENTER VIEW", "MAP",		  "STRAFE",		 "FLY UP",
+	"FLY DOWN"
+};
+
+// the keys in CONFIG.ROT
+const char *const ps3_action_cfgname[PS3_NUMACTIONS] = {
+	"PS3Fire",		  "PS3Run",			"PS3Open",		  "PS3VolteFace",
+	"PS3ToggleWeapon", "PS3NextWeapon", "PS3DropWeapon", "PS3AutoRun",
+	"PS3CenterView",  "PS3Map",			"PS3Strafe",	  "PS3FlyUp",
+	"PS3FlyDown"
+};
+
+// FLY UP / FLY DOWN: no button by default (all eleven are in use); the
+// right stick flies in Mercury Mode
+const int ps3_default_binding[PS3_NUMACTIONS] = {
+	PS3_PAD_R2,		  PS3_PAD_L2, PS3_PAD_CROSS, PS3_PAD_CIRCLE,
+	PS3_PAD_SQUARE,	  PS3_PAD_TRIANGLE, PS3_PAD_R1, PS3_PAD_L1,
+	PS3_PAD_R3,		  PS3_PAD_SELECT, PS3_PAD_L3, 0, 0
+};
+
+int ps3_binding[PS3_NUMACTIONS] = {
+	PS3_PAD_R2,		  PS3_PAD_L2, PS3_PAD_CROSS, PS3_PAD_CIRCLE,
+	PS3_PAD_SQUARE,	  PS3_PAD_TRIANGLE, PS3_PAD_R1, PS3_PAD_L1,
+	PS3_PAD_R3,		  PS3_PAD_SELECT, PS3_PAD_L3, 0, 0
+};
+
+int ps3_turnspeed = 10;
+int ps3_aimspeed = 10;
+int ps3_deadzone = 19;
+int ps3_invertaim = 0;
+int ps3_swapsticks = 0;
+
+const char *PS3_ButtonName(unsigned bit)
+{
+	int i;
+
+	for (i = 0; i < PS3_NUMBINDABLE; i++)
+		if (ps3_bindable[i] == bit)
+			return ps3_bindable_name[i];
+
+	return "---";
+}
+
+// What the platform layer needs to know: the dead zone, and which button
+// leaves the map in the menus (it types Tab).
+void PS3_ApplyControllerSettings(void)
+{
+	PS3_Input_SetDeadzone(ps3_deadzone);
+	PS3_Input_SetMapButton((unsigned)ps3_binding[ps3a_map]);
+}
+
+static ps3_gamepad_t ps3pad;
+static int ps3_strafe;		  // left stick X this tic, -32767..32767
+static int ps3_aim_accum;	  // aim stick Y, pulses of horizon up/down
+static int ps3_weapon_target = -1;
+
+// -32767..32767 -> the same range, gentler near the center: fine aiming
+// with the DualShock 3's short sticks, full speed at the edge.
+static int PS3_Curve(int v)
+{
+	long long a = v < 0 ? -v : v;
+	long long c = (a * a / 32767) * 6 / 10 + a * 4 / 10;
+
+	return v < 0 ? -(int)c : (int)c;
+}
+
+static int PS3_Held(int action)
+{
+	return ps3_binding[action] && (ps3pad.buttons & (unsigned)ps3_binding[action]);
+}
+
+static int PS3_Pressed(int action)
+{
+	return ps3_binding[action] && (ps3pad.pressed & (unsigned)ps3_binding[action]);
+}
+
+static void PollPS3PadButtons(void)
+{
+	unsigned b;
+
+	PS3_Input_Game(&ps3pad);
+	b = ps3pad.buttons;
+
+	if (ps3_swapsticks)
+	{
+		int t;
+
+		t = ps3pad.lx; ps3pad.lx = ps3pad.rx; ps3pad.rx = t;
+		t = ps3pad.ly; ps3pad.ly = ps3pad.ry; ps3pad.ry = t;
+	}
+
+	if (PS3_Held(ps3a_fire))
+		buttonpoll[bt_attack] = true;
+	if (PS3_Held(ps3a_run))
+		buttonpoll[bt_run] = true;
+	if (PS3_Held(ps3a_open))
+		buttonpoll[bt_use] = true;
+	if (PS3_Held(ps3a_voltface))
+		buttonpoll[bt_turnaround] = true;
+	if (PS3_Held(ps3a_toggleweapon))
+		buttonpoll[bt_swapweapon] = true;
+	if (PS3_Held(ps3a_dropweapon))
+		buttonpoll[bt_dropweapon] = true;
+	if (PS3_Held(ps3a_autorun))
+		buttonpoll[bt_autorun] = true;
+	if (PS3_Held(ps3a_map))
+		buttonpoll[bt_map] = true;
+	if (PS3_Held(ps3a_strafe))
+		buttonpoll[bt_strafe] = true;
+
+	if (b & PS3_PAD_UP)
+		buttonpoll[di_north] = true;
+	if (b & PS3_PAD_DOWN)
+		buttonpoll[di_south] = true;
+	if (b & PS3_PAD_LEFT)
+		buttonpoll[di_west] = true;
+	if (b & PS3_PAD_RIGHT)
+		buttonpoll[di_east] = true;
+
+	// both "look" buttons at once = back to the normal horizon
+	if (PS3_Held(ps3a_centerview))
+	{
+		buttonpoll[bt_lookup] = true;
+		buttonpoll[bt_lookdown] = true;
+	}
+
+	// ROTT's "look up/down": in Mercury Mode they fly (CheckFlying)
+	if (PS3_Held(ps3a_flyup))
+		buttonpoll[bt_lookup] = true;
+	if (PS3_Held(ps3a_flydown))
+		buttonpoll[bt_lookdown] = true;
+
+	// the next bullet weapon the player has (pistol, dual pistols, MP40),
+	// held until the button is released
+	if (PS3_Pressed(ps3a_nextweapon))
+	{
+		static const int order[3] = { wp_pistol, wp_twopistol, wp_mp40 };
+		static const int button[3] = { bt_pistol, bt_dualpistol, bt_mp40 };
+		int cur = 0, i;
+
+		for (i = 0; i < 3; i++)
+			if (locplayerstate->bulletweapon == order[i])
+				cur = i;
+
+		ps3_weapon_target = -1;
+
+		for (i = 1; i <= 3; i++)
+		{
+			int n = (cur + i) % 3;
+
+			if (order[n] == wp_pistol || locplayerstate->HASBULLETWEAPON[order[n]])
+			{
+				ps3_weapon_target = button[n];
+				break;
+			}
+		}
+	}
+	else if (!PS3_Held(ps3a_nextweapon))
+	{
+		ps3_weapon_target = -1;
+	}
+
+	if (ps3_weapon_target >= 0)
+		buttonpoll[ps3_weapon_target] = true;
+
+	// Mercury Mode: the aim stick flies instead, past half way (up is up,
+	// whatever INVERT AIM says: it isn't aiming)
+	if ((player->flags & FL_FLEET) && !PS3_Held(ps3a_centerview))
+	{
+		if (ps3pad.ry < -16000)
+			buttonpoll[bt_lookup] = true;
+		else if (ps3pad.ry > 16000)
+			buttonpoll[bt_lookdown] = true;
+
+		ps3_aim_accum = 0;
+	}
+	// aim stick Y: up/down, as a stream of horizon steps whose rate
+	// follows the stick (the engine only knows digital steps)
+	else if (ps3pad.ry != 0)
+	{
+		int ry = ps3_invertaim ? -ps3pad.ry : ps3pad.ry;
+
+		ps3_aim_accum += PS3_Curve(ry) * tics * ps3_aimspeed / 10;
+
+		if (ps3_aim_accum <= -20000)
+		{
+			buttonpoll[bt_horizonup] = true;
+			ps3_aim_accum += 20000;
+
+			if (ps3_aim_accum < -20000)
+				ps3_aim_accum = -20000;
+		}
+		else if (ps3_aim_accum >= 20000)
+		{
+			buttonpoll[bt_horizondown] = true;
+			ps3_aim_accum -= 20000;
+
+			if (ps3_aim_accum > 20000)
+				ps3_aim_accum = 20000;
+		}
+	}
+	else
+	{
+		ps3_aim_accum = 0;
+	}
+}
+
+// After PollKeyboardMove: the sticks add to its values.
+static void PollPS3PadMove(void)
+{
+	int turn = PS3_Curve(ps3pad.rx);
+	int move = ps3pad.ly;
+
+	if (turn != 0)
+	{
+		int kx = (int)(-(long long)turn * KEYBOARDNORMALTURNAMOUNT / 32767 *
+					   ps3_turnspeed / 10);
+
+		if (buttonpoll[bt_run])
+			kx = FixedMul(kx, TURBOTURNAMOUNT);
+
+		KX += kx;
+	}
+
+	if (move != 0)
+	{
+		int ky = (int)((long long)move * BASEMOVE / 32767);
+
+		if (buttonpoll[bt_run])
+			ky <<= 1;
+
+		KY += ky;
+	}
+
+	ps3_strafe = ps3pad.lx;
+}
+
+// After PollMove: left stick X strafes, in proportion.
+static void PollPS3PadStrafe(void)
+{
+	int angle, amount;
+
+	if (ps3_strafe == 0 || locplayerstate->NETCAPTURED == 1)
+		return;
+
+	amount = (int)((long long)STRAFEAMOUNT * (ps3_strafe < 0 ? -ps3_strafe : ps3_strafe) / 32767);
+
+	if (buttonpoll[bt_run])
+		amount += amount >> 1;
+
+	if (ps3_strafe < 0)
+		angle = (player->angle - FINEANGLES / 4) & (FINEANGLES - 1);
+	else
+		angle = (player->angle + FINEANGLES / 4) & (FINEANGLES - 1);
+
+	controlbuf[0] += -(FixedMul(amount, costable[angle]));
+	controlbuf[1] += FixedMul(amount, sintable[angle]);
+}
+#endif
+
 //******************************************************************************
 //
 // PollControls
@@ -2431,6 +2728,10 @@ void PollControls(void)
 	//
 	PollKeyboardButtons();
 
+#ifdef __PS3__
+	PollPS3PadButtons();
+#endif
+
 	if (mouseenabled)
 		PollMouseButtons();
 
@@ -2448,7 +2749,15 @@ void PollControls(void)
 
 	PollKeyboardMove();
 
+#ifdef __PS3__
+	PollPS3PadMove();
+#endif
+
 	PollMove();
+
+#ifdef __PS3__
+	PollPS3PadStrafe();
+#endif
 
 	buttonbits = 0;
 	if (player->flags & FL_DYING) // Player has died

@@ -330,7 +330,14 @@ void DrawCinematicBackground(backevent *back)
 		buf = (byte *)bufferofs + ylookup[back->yoffset];
 		offset = (back->currentoffset >> FRACTIONBITS);
 
+#ifdef __PS3__
+		// stretched (the titles are): 320 columns, the rest isn't shown
+		// and at 848 wide it runs past the backdrop (WIDESCREEN)
+		for (i = 0; i < (StretchScreen ? 320 : iGLOBAL_SCREENWIDTH);
+			 i++, offset++, buf++)
+#else
 		for (i = 0; i < iGLOBAL_SCREENWIDTH; i++, offset++, buf++)
+#endif
 		{
 			if (offset >= back->backdropwidth)
 				src = &(pic->data) +
@@ -372,7 +379,14 @@ void DrawCinematicMultiBackground(backevent *back)
 		buf = (byte *)bufferofs + ylookup[back->yoffset];
 		offset = (back->currentoffset >> FRACTIONBITS);
 
+#ifdef __PS3__
+		// stretched (the titles are): 320 columns, the rest isn't shown
+		// and at 848 wide it runs past the backdrop (WIDESCREEN)
+		for (i = 0; i < (StretchScreen ? 320 : iGLOBAL_SCREENWIDTH);
+			 i++, offset++, buf++)
+#else
 		for (i = 0; i < iGLOBAL_SCREENWIDTH; i++, offset++, buf++)
+#endif
 		{
 			if (offset >= back->backdropwidth)
 				src = back->data +
@@ -416,7 +430,14 @@ void DrawCinematicBackdrop(backevent *back)
 		buf = (byte *)bufferofs;
 		offset = (back->currentoffset >> FRACTIONBITS);
 
+#ifdef __PS3__
+		// stretched (the titles are): 320 columns, the rest isn't shown
+		// and at 848 wide it runs past the backdrop (WIDESCREEN)
+		for (i = 0; i < (StretchScreen ? 320 : iGLOBAL_SCREENWIDTH);
+			 i++, offset++, buf++)
+#else
 		for (i = 0; i < iGLOBAL_SCREENWIDTH; i++, offset++, buf++)
+#endif
 		{
 			if (offset >= back->backdropwidth)
 				src = shape + p->collumnofs[offset - back->backdropwidth];

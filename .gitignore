@@ -1,1 +1,38 @@
+# Build output (upstream CMake builds and make -C ps3)
 *build*/
+/ps3/obj/
+/ps3/build/
+/ps3/pkgfiles/
+*.o
+*.d
+*.elf
+*.self
+*.pkg
+
+# Host test harness (ps3/hosttest)
+/ps3/hosttest/obj-*/
+/ps3/hosttest/rott-host-*
+
+# Game data: never in the repository
+*.wad
+*.WAD
+*.rtl
+*.RTL
+*.rtc
+*.RTC
+*.rts
+*.RTS
+*.rtlx
+*.RTLX
+*.sf2
+*.SF2
+
+# Saves, configs and logs from test runs
+*.rot
+*.ROT
+rott_log*.txt
+
+# Patches and their leftovers
+*.patch
+*.orig
+*.rej

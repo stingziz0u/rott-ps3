@@ -19,6 +19,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 // RT_DRAW.C
 
+#ifdef __PS3__
+#include "ps3_platform.h"
+#include "rt_ps3.h"
+#endif
 #include "profile.h"
 #include "rt_def.h"
 #include <string.h>
@@ -54,6 +58,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "rt_sound.h"
 #include "rt_msg.h"
 #include "modexlib.h"
+#ifdef __PS3__
+#include "rt_battl.h"
+#endif
 #include "rt_rand.h"
 #include "rt_net.h"
 #include "rt_sc_a.h"
@@ -1362,11 +1369,21 @@ void CalcTics(void)
 	//
 
 	tc = GetTicCount();
+#ifdef __PS3__
+	{
+		// how long the game waits for the next tic: the headroom
+		// (frame time minus this = what a frame really costs)
+		unsigned long long wait0 = PS3_Micros();
+#endif
 	while (tc == oldtime)
 	{
 		tc = GetTicCount();
 		I_Sleep(1);
 	} /* endwhile */
+#ifdef __PS3__
+		PS3_Video_ProfileIdle((long long)(PS3_Micros() - wait0));
+	}
+#endif
 	tics = tc - oldtime;
 
 	//   SoftError("CT GetTicCount()=%ld\n",GetTicCount());
@@ -2582,7 +2599,14 @@ void ThreeDRefresh(void)
 	if (HUD == true)
 		DrawPlayerLocation();
 
+#ifdef __PS3__
+	// Video Settings > LARGE HUD: the status bars at 2x, in play only
+	PS3_SetHudScale(PS3_LargeHudTop(), PS3_LargeHudBottom());
 	FlipPage();
+	PS3_SetHudScale(0, 0);
+#else
+	FlipPage();
+#endif
 	gamestate.frame++;
 
 	player = tempptr;
@@ -2754,7 +2778,7 @@ void StartupRotateBuffer(int masked)
 	{
 		RotatedImage = SafeMalloc(131072);
 	}
-	else if (iGLOBAL_SCREENWIDTH == 640)
+	else if (iGLOBAL_SCREENWIDTH >= 640) // PS3: and 848 (rows are 1024)
 	{
 		RotatedImage = SafeMalloc(131072 * 4);
 	}
@@ -2766,7 +2790,7 @@ void StartupRotateBuffer(int masked)
 		{
 			memset(RotatedImage, 0, 131072);
 		}
-		else if (iGLOBAL_SCREENWIDTH == 640)
+		else if (iGLOBAL_SCREENWIDTH >= 640)
 		{
 			memset(RotatedImage, 0, 131072 * 4);
 		}
@@ -2777,7 +2801,7 @@ void StartupRotateBuffer(int masked)
 		{
 			memset(RotatedImage, 0xff, 131072);
 		}
-		else if (iGLOBAL_SCREENWIDTH == 640)
+		else if (iGLOBAL_SCREENWIDTH >= 640)
 		{
 			memset(RotatedImage, 0xff, 131072 * 4);
 		}
@@ -2785,7 +2809,7 @@ void StartupRotateBuffer(int masked)
 	// memset(RotatedImage,0xff,131072);//org
 	// memset(RotatedImage,0xff,131072*8);
 
-	if ((masked == false) && (iGLOBAL_SCREENWIDTH == 640))
+	if ((masked == false) && (iGLOBAL_SCREENWIDTH >= 640))
 	{
 		DisableScreenStretch();
 		k = (28 * 512); // 14336;
@@ -2945,10 +2969,13 @@ void DrawRotatedScreen(int cx, int cy, byte *destscreen, int angle, int scale,
 		xst = (((-cx) * s) + (128 << 16)) - (cy * c);
 		xct = (((-cx) * c) + (256 << 16) + (1 << 18) - (1 << 16)) + (cy * s);
 	}
-	else if ((iGLOBAL_SCREENWIDTH == 640) && (masked == false))
+	else if ((iGLOBAL_SCREENWIDTH >= 640) && (masked == false))
 	{
+		// x = 317 at 640 wide: the middle (PS3: of 848 too)
 		xst = (((-cx) * s) + ((268) << 16)) - (cy * c);
-		xct = (((-cx) * c) + ((317) << 16) + (1 << 18) - (1 << 16)) + (cy * s);
+		xct = (((-cx) * c) + ((iGLOBAL_SCREENWIDTH / 2 - 3) << 16) +
+			   (1 << 18) - (1 << 16)) +
+			  (cy * s);
 	} // y=268;x=317
 
 	mr_xstep = s;
@@ -3350,7 +3377,7 @@ void UpdateScreenSaver(void)
 			ScreenSaver->pausex = RandomNumber("pausex", 0) % 240;
 			ScreenSaver->pausey = RandomNumber("pausey", 0) % 168;
 		}
-		else if (iGLOBAL_SCREENWIDTH == 640)
+		else if (iGLOBAL_SCREENWIDTH >= 640)
 		{
 			ScreenSaver->pausex = RandomNumber("pausex", 0) % 480;
 			ScreenSaver->pausey = RandomNumber("pausey", 0) % 403;
@@ -5075,7 +5102,7 @@ void DrawRotRow(int count, byte *dest, byte *src)
 			ecx += mr_ystep;
 		}
 	}
-	else if (iGLOBAL_SCREENWIDTH == 640)
+	else if (iGLOBAL_SCREENWIDTH >= 640) // PS3: and 848
 	{
 		while (count--)
 		{
@@ -5191,3 +5218,39 @@ void RefreshClear(void)
 		VL_Bar(0, base, iGLOBAL_SCREENHEIGHT, start, FLOORCOLOR);
 	}
 }
+
+#ifdef __PS3__
+//******************************************************************************
+//
+// PS3_LargeHudTop / PS3_LargeHudBottom
+//
+// Video Settings > LARGE HUD. At 640x480 taradino draws the 320 pixel wide
+// status bars at their original size; the PS3's SDL layer redraws them at
+// 2x as the frame goes out (sdl_ps3.c). Only where that layout is the one
+// on screen: 640x480, not stretched (menus), not in battle mode (kills bar).
+//
+//******************************************************************************
+
+static int PS3_LargeHudOK(void)
+{
+	return ps3_largehud &&
+		   (iGLOBAL_SCREENWIDTH == 640 || iGLOBAL_SCREENWIDTH == PS3_WIDE_W) &&
+		   iGLOBAL_SCREENHEIGHT == 480 && !StretchScreen && !BATTLEMODE;
+}
+
+int PS3_LargeHudTop(void)
+{
+	return PS3_LargeHudOK() && SHOW_TOP_STATUS_BAR();
+}
+
+int PS3_LargeHudBottom(void)
+{
+	return PS3_LargeHudOK() && SHOW_BOTTOM_STATUS_BAR() && !SHOW_KILLS();
+}
+
+// the see-through health and ammo of the bigger view sizes (DrawStats)
+int PS3_LargeHudStats(void)
+{
+	return PS3_LargeHudOK() && SHOW_PLAYER_STATS() && !SHOW_KILLS();
+}
+#endif

@@ -27,6 +27,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "rt_menu.h"
 #include "rt_util.h"
 #include "modexlib.h"
+#ifdef __PS3__
+#include "ps3_platform.h"
+#endif
 #include "profile.h"
 #include "rt_str.h"
 #include "rt_draw.h"
@@ -799,6 +802,13 @@ void VL_DecompressLBM(lbm_t *lbminfo, boolean flip)
 
 void SetBorderColor(int color)
 {
+#ifdef __PS3__
+	// DOS ROTT flashed the VGA overscan (the border around the picture)
+	// when you got hurt; taradino paints a frame inside the view instead.
+	// On the PS3 it goes back outside: the TV's bars around the picture.
+	PS3_SetBorderIndex(color);
+	return;
+#endif
 	// bna section start
 
 	byte *cnt, *Ycnt, *b;

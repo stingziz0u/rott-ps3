@@ -40,6 +40,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "develop.h"
 #include "rt_rand.h"
 #include "engine.h"
+#ifdef __PS3__
+#include "rt_ps3.h"
+#endif
 #include <stdlib.h>
 #include <string.h>
 
@@ -3850,6 +3853,11 @@ void LoadPushWalls(byte *bufptr, int sz)
 	unitsize += sizeof(pw->action);
 
 	num = sz / unitsize;
+#ifdef __PS3__
+	// a saved game that doesn't match: back to the menu (rt_menu.c)
+	if (pwallnum != num)
+		PS3_LoadMismatch("Push Walls", pwallnum, num);
+#endif
 	if (pwallnum != num)
 		Error("Different number of Push Walls when trying to load a "
 			  "game\npwallnum=%d num=%d",
@@ -4000,6 +4008,11 @@ void LoadMaskedWalls(byte *bufptr, int sz)
 	unitsize += sizeof(mw->flags);
 
 	num = sz / unitsize;
+#ifdef __PS3__
+	// a saved game that doesn't match: back to the menu (rt_menu.c)
+	if (maskednum != num)
+		PS3_LoadMismatch("Masked Walls", maskednum, num);
+#endif
 	if (maskednum != num)
 		Error("Different number of Masked Walls when trying to load a "
 			  "game\nmaskednum=%d num=%d",
@@ -4116,6 +4129,11 @@ void LoadDoors(byte *buf, int size)
 	unitsize += sizeof(dooreindex);
 
 	num = size / unitsize;
+#ifdef __PS3__
+	// a saved game that doesn't match: back to the menu (rt_menu.c)
+	if (doornum != num)
+		PS3_LoadMismatch("Doors", doornum, num);
+#endif
 	if (doornum != num)
 		Error("Different number of Doors when trying to load a "
 			  "game\ndoornum=%d num=%d",

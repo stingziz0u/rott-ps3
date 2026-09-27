@@ -512,6 +512,11 @@ static int root_sdl_event_filter(SDL_Event *event)
 		case SDL_QUIT:
 			/* !!! rcg TEMP */
 			fprintf(stderr, "\n\n\nSDL_QUIT!\n\n\n");
+#ifdef __PS3__
+			// "Quit Game" from the XMB: keep what was set in the options
+			WriteConfig();
+			exit(0);
+#endif
 			SDL_Quit();
 			exit(42);
 	} /* switch */

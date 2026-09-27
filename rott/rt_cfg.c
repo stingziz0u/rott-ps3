@@ -394,6 +394,164 @@ void ConvertPasswordToPasswordString(void)
 //
 //******************************************************************************
 
+#ifdef __PS3__
+#include "ps3_platform.h"
+#include "ps3_video.h"
+#include "rt_ps3.h"
+#include <strings.h>
+
+// Changes to the PS3 defaults reach configs written by older builds
+// through this number (handoff notes 3.56). 1: crosshair on.
+#define PS3_CONFIG_VERSION 1
+static int ps3_config_version = 0;
+
+// Options > Video Settings (the controller's are in rt_playr.c)
+int ps3_screenfit = 90;
+int ps3_filter = 1;
+int ps3_showfps = 0;
+int ps3_lowres = 0;
+int ps3_widescreen = 0;
+int ps3_largehud = 1;
+
+// Options > Music Synth
+int ps3_musicsf2 = 0;
+
+void PS3_ApplyVideoSettings(void)
+{
+	PS3_Video_SetFit(ps3_screenfit);
+	PS3_Video_SetFilter(ps3_filter);
+	PS3_Video_SetShowFPS(ps3_showfps);
+}
+
+static int PS3_Clamp(int v, int lo, int hi)
+{
+	return v < lo ? lo : (v > hi ? hi : v);
+}
+
+// The PS3 block of CONFIG.ROT, read by name: ROTT's own ReadInt() expects
+// the keys in exactly the order they were written, and one key more or
+// less (a config from an older build) would shift everything after it.
+static void PS3_ReadSettings(void)
+{
+	static const struct
+	{
+		const char *name;
+		int *val;
+	} keys[] = {
+		{ "PS3ConfigVersion", &ps3_config_version },
+		{ "PS3TurnSpeed", &ps3_turnspeed },
+		{ "PS3AimSpeed", &ps3_aimspeed },
+		{ "PS3DeadZone", &ps3_deadzone },
+		{ "PS3InvertAim", &ps3_invertaim },
+		{ "PS3SwapSticks", &ps3_swapsticks },
+		{ "PS3ScreenFit", &ps3_screenfit },
+		{ "PS3Filter", &ps3_filter },
+		{ "PS3ShowFPS", &ps3_showfps },
+		{ "PS3LargeHUD", &ps3_largehud },
+		{ "PS3MusicSynth", &ps3_musicsf2 },
+	};
+	int i;
+
+	for (;;)
+	{
+		char key[64];
+		int v;
+
+		GetToken(true);
+
+		if (endofscript)
+			break;
+
+		if (strncasecmp(token, "PS3", 3) != 0)
+		{
+			UnGetToken(); // the engine's next key
+			break;
+		}
+
+		M_snprintf(key, sizeof(key), "%s", token);
+
+		if (!TokenAvailable())
+			continue;
+
+		GetToken(false);
+		v = ParseNum(token);
+
+		for (i = 0; i < (int)arrlen(keys); i++)
+		{
+			if (!strcasecmp(key, keys[i].name))
+				*keys[i].val = v;
+		}
+
+		for (i = 0; i < PS3_NUMACTIONS; i++)
+		{
+			int j, ok = (v == 0);
+
+			if (strcasecmp(key, ps3_action_cfgname[i]))
+				continue;
+
+			for (j = 0; j < PS3_NUMBINDABLE; j++)
+				if ((unsigned)v == ps3_bindable[j])
+					ok = 1;
+
+			if (ok)
+				ps3_binding[i] = v;
+		}
+	}
+
+	ps3_turnspeed = PS3_Clamp(ps3_turnspeed, 1, 20);
+	ps3_aimspeed = PS3_Clamp(ps3_aimspeed, 1, 20);
+	ps3_deadzone = PS3_Clamp(ps3_deadzone, 5, 40);
+	ps3_invertaim = !!ps3_invertaim;
+	ps3_swapsticks = !!ps3_swapsticks;
+	ps3_screenfit = PS3_Clamp(ps3_screenfit, 70, 100);
+	ps3_filter = !!ps3_filter;
+	ps3_showfps = !!ps3_showfps;
+	ps3_largehud = !!ps3_largehud;
+	ps3_musicsf2 = !!ps3_musicsf2;
+}
+
+static void PS3_WriteSettings(int file)
+{
+	int i;
+
+	SafeWriteString(file, "\n;\n");
+	SafeWriteString(file, "; PS3: DualShock 3 buttons (Options > Controller)\n");
+
+	for (i = 0; i < PS3_NUMACTIONS; i++)
+	{
+		char name[32];
+
+		M_snprintf(name, sizeof(name), "%-17s", ps3_action_cfgname[i]);
+		WriteParameter(file, name, ps3_binding[i]);
+	}
+
+	SafeWriteString(file, "\n;\n");
+	SafeWriteString(file, "; PS3: sticks and video settings\n");
+	WriteParameter(file, "PS3TurnSpeed     ", ps3_turnspeed);
+	WriteParameter(file, "PS3AimSpeed      ", ps3_aimspeed);
+	WriteParameter(file, "PS3DeadZone      ", ps3_deadzone);
+	WriteParameter(file, "PS3InvertAim     ", ps3_invertaim);
+	WriteParameter(file, "PS3SwapSticks    ", ps3_swapsticks);
+	WriteParameter(file, "PS3ScreenFit     ", ps3_screenfit);
+	WriteParameter(file, "PS3Filter        ", ps3_filter);
+	WriteParameter(file, "PS3ShowFPS       ", ps3_showfps);
+	WriteParameter(file, "PS3LargeHUD      ", ps3_largehud);
+	SafeWriteString(file, "\n;\n");
+	SafeWriteString(file, "; PS3: music synth, 0 = AdLib, 1 = the first .sf2 in USRDIR\n");
+	WriteParameter(file, "PS3MusicSynth    ", ps3_musicsf2);
+}
+
+static void PS3_MigrateConfig(void)
+{
+	if (ps3_config_version < 1)
+	{
+		iG_aimCross = 1;
+	}
+
+	ps3_config_version = PS3_CONFIG_VERSION;
+}
+#endif
+
 boolean ParseConfigFile(void)
 {
 	//   int temp;
@@ -432,7 +590,15 @@ boolean ParseConfigFile(void)
 		ReadInt("ScreenWidth", &iGLOBAL_SCREENWIDTH);
 		ReadInt("ScreenHeight", &iGLOBAL_SCREENHEIGHT);
 
+#ifdef __PS3__
+		PS3_ReadSettings();
+#endif
+
 		if ((iGLOBAL_SCREENWIDTH != 320 || iGLOBAL_SCREENHEIGHT != 200) &&
+#ifdef __PS3__
+			(iGLOBAL_SCREENWIDTH != PS3_WIDE_W ||
+			 iGLOBAL_SCREENHEIGHT != PS3_WIDE_H) &&
+#endif
 			(iGLOBAL_SCREENWIDTH != 640 || iGLOBAL_SCREENHEIGHT != 480))
 		{
 			printf("WARNING: Invalid screen resolution %dx%d. Reverting to "
@@ -894,6 +1060,9 @@ void ReadConfig(void)
 
 	filename = M_StringJoin(ApogeePath, PATH_SEP_STR, ConfigName, NULL);
 	SetConfigDefaultValues();
+#ifdef __PS3__
+	ps3_config_version = 0;
+#endif
 	if (access(filename, F_OK) == 0)
 	{
 		LoadScriptFile(filename);
@@ -906,6 +1075,17 @@ void ReadConfig(void)
 		Z_Free(scriptbuffer);
 	}
 	free(filename);
+
+#ifdef __PS3__
+	PS3_MigrateConfig();
+	ps3_lowres = (iGLOBAL_SCREENWIDTH == 320);
+	ps3_widescreen = (iGLOBAL_SCREENWIDTH == PS3_WIDE_W);
+	fandc = 1; // the option is gone from the menu (rt_menu.c): always on
+	PS3_ApplyControllerSettings();
+	PS3_ApplyVideoSettings();
+	// a SoundFont that isn't there any more: back to AdLib
+	ps3_musicsf2 = PS3_Music_UseSoundFont(ps3_musicsf2);
+#endif
 
 	filename = M_StringJoin(ApogeePath, PATH_SEP_STR, BattleName, NULL);
 	SetBattleDefaultValues();
@@ -1631,8 +1811,25 @@ void WriteConfig(void)
 	SafeWriteString(file, "\n;\n");
 	SafeWriteString(file, "; Screen Resolution, supported resolutions: \n");
 	SafeWriteString(file, "; 320x200 and 640x480\n");
+#ifdef __PS3__
+	// Options > Video Settings > Low Resolution: from the next start
+	// and > WIDESCREEN (LOW RESOLUTION wins)
+	WriteParameter(file, "ScreenWidth      ",
+				   ps3_lowres ? 320 : (ps3_widescreen ? PS3_WIDE_W : 640));
+	WriteParameter(file, "ScreenHeight     ",
+				   ps3_lowres ? 200 : (ps3_widescreen ? PS3_WIDE_H : 480));
+#else
 	WriteParameter(file, "ScreenWidth      ", iGLOBAL_SCREENWIDTH);
 	WriteParameter(file, "ScreenHeight     ", iGLOBAL_SCREENHEIGHT);
+#endif
+
+#ifdef __PS3__
+	SafeWriteString(file, "\n;\n");
+	SafeWriteString(file, "; PS3: defaults already applied (don't edit)\n");
+	WriteParameter(file, "PS3ConfigVersion ", ps3_config_version);
+
+	PS3_WriteSettings(file);
+#endif
 
 	// Write out ViewSize
 

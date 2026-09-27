@@ -3,6 +3,9 @@
 #include <string.h>
 #include "WinRott.h"
 #include "modexlib.h"
+#ifdef __PS3__
+#include "rt_ps3.h"
+#endif
 
 // typedef unsigned char byte;
 
@@ -62,6 +65,22 @@ void SetRottScreenRes(int Width, int Height)
 
 		YZANGLELIMIT = (60 * FINEANGLES / 360);
 	}
+#ifdef __PS3__
+	// Video Settings > WIDESCREEN: 848x480, the 640x480 picture with
+	// more to the sides (rt_view.c). The status bar keeps the 640
+	// layout, health on the left, ammo on the right edge.
+	if (iGLOBAL_SCREENWIDTH == PS3_WIDE_W)
+	{
+		iGLOBAL_FOCALWIDTH = 180;
+		dGLOBAL_FPFOCALWIDTH = 180.0;
+		iGLOBAL_HEALTH_X = 40;
+		iGLOBAL_HEALTH_Y = 466;
+		iGLOBAL_AMMO_X = 600 + (PS3_WIDE_W - 640);
+		iGLOBAL_AMMO_Y = 464;
+
+		YZANGLELIMIT = (60 * FINEANGLES / 360);
+	}
+#endif
 }
 
 //----------------------------------------------------------------------
